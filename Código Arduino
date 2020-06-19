@@ -1,0 +1,182 @@
+
+//blibioteca
+#include <ESP8266WiFi.h>
+#include <PubSubClient.h>
+#define DEBUG
+
+const int ldrPin = 13; // Sensor de movimento
+const int ledVerde = 12;
+const int ledVermelho = 14;
+
+//Variaveis
+int ldrValue = 0; // sensor de movimento inicia com 0
+long lastMsg = 0;
+char msg[50];
+String strMSG = "0";
+char mensagem[30];
+
+
+
+//informaÁıes da rede WIFI
+const char* ssid = "guest";                 //SSID da rede WIFI
+const char* password =  "123456789";    //senha da rede wifi
+
+//informaÁıes do broker MQTT - Verifique as informaÁıes geradas pelo CloudMQTT
+const char* mqttServer = "soldier.cloudmqtt.com";   //server
+const char* mqttUser = "wpiszmvr";              //user
+const char* mqttPassword = "Oqde7rh5EPVp";      //password
+const int mqttPort = 12761;                     //port
+const char* mqttTopicSub = "casa/L1";           //tÛpico que sera assinado
+
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+void setup() {
+
+
+
+  Serial.begin(115200);
+  pinMode(ledVerde, OUTPUT);
+  pinMode(ledVermelho, OUTPUT);
+
+  WiFi.begin(ssid, password);
+
+  Serial.print("Entrando no Setup");
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+#ifdef DEBUG
+    Serial.println("Conectando ao WiFi..");
+#endif
+  }
+#ifdef DEBUG
+  Serial.println("Conectado na rede WiFi");
+#endif
+
+  client.setServer(mqttServer, mqttPort);
+  client.setCallback(callback);
+
+  while (!client.connected()) {
+#ifdef DEBUG
+    Serial.println("Conectando ao Broker MQTT...");
+#endif
+
+    if (client.connect("ESP8266Client", mqttUser, mqttPassword )) {
+#ifdef DEBUG
+      Serial.println("Conectado");
+#endif
+
+    } else {
+#ifdef DEBUG
+      Serial.print("falha estado  ");
+      Serial.print(client.state());
+#endif
+      delay(2000);
+
+    }
+  }
+
+  //subscreve no tÛpico
+  client.subscribe(mqttTopicSub);
+
+
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+
+  if (!client.connected()) {
+    Serial.print("Passou no Connected");
+    reconect();
+  }
+
+
+  Serial.println(digitalRead(ldrPin));
+  Serial.println(analogRead(ldrPin));
+  digitalWrite(ledVermelho, HIGH);
+  digitalWrite(ledVerde, LOW);
+
+
+  //  //DESATIVAR Menssagem
+  if (strMSG == "0") {
+    //Serial.print(" Luminosidade Alta - Nao Alarmado");
+    digitalWrite(ledVerde, HIGH);
+    digitalWrite(ledVermelho, LOW);
+  }
+
+  if (digitalRead(ldrPin) > 0) {
+    sprintf(mensagem, "1");
+    Serial.print("Mensagem enviada: ");
+    Serial.println(mensagem);  //Envia a mensagem ao broker
+    client.publish("casa/L1", mensagem);
+    Serial.println("Mensagem enviada com sucesso...");
+
+    digitalWrite(ledVermelho, HIGH);
+    digitalWrite(ledVerde, LOW);
+
+    strMSG = "1";
+    
+
+    delay(2000);
+
+  }
+  //Exibindo o valor do sensor no serial monitor.
+  delay(2000);
+
+  client.loop();
+
+  //  }
+
+
+
+}
+
+void callback(char* topic, byte* payload, unsigned int length) {
+
+  //armazena msg recebida em uma sring
+  payload[length] = '\0';
+  strMSG = String((char*)payload);
+
+#ifdef DEBUG
+  Serial.print("Mensagem chegou do tÛpico: ");
+  Serial.println(topic);
+  Serial.print("Mensagem:");
+  Serial.print(strMSG);
+  Serial.println();
+  Serial.println("-----------------------");
+#endif
+
+
+}
+
+
+//funÁ„o pra reconectar ao servido MQTT
+void reconect() {
+  //Enquanto estiver desconectado
+  while (!client.connected()) {
+#ifdef DEBUG
+    Serial.print("Tentando conectar ao servidor MQTT");
+#endif
+
+    bool conectado = strlen(mqttUser) > 0 ?
+                     client.connect("ESP8266Client", mqttUser, mqttPassword) :
+                     client.connect("ESP8266Client");
+
+    if (conectado) {
+#ifdef DEBUG
+      Serial.println("Conectado!");
+#endif
+      //subscreve no tÛpico
+      client.subscribe(mqttTopicSub, 1); //nivel de qualidade: QoS 1
+    } else {
+#ifdef DEBUG
+      Serial.println("Falha durante a conex„o.Code: ");
+      Serial.println( String(client.state()).c_str());
+      Serial.println("Tentando novamente em 10 s");
+#endif
+      //Aguarda 10 segundos
+      delay(10000);
+    }
+  }
+}
